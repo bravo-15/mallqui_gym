@@ -1,0 +1,361 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
+
+use App\Http\Controllers\Api\PersonaController;
+use App\Http\Controllers\CursoController;
+use App\Http\Controllers\MembresiaController;
+use App\Http\Controllers\ClaseController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\JwtAuthController;
+use App\Http\Controllers\ClienteController;
+use App\Http\Controllers\ClienteMembresiaController;
+use App\Http\Controllers\PagoMembresiaController;
+use App\Http\Controllers\MembresiaProcesoController;
+use App\Http\Controllers\SolicitudPagoMembresiaController;
+use App\Http\Controllers\AsistenciaController;
+use App\Http\Controllers\EntrenadorController;
+use App\Http\Controllers\RutinaController;
+use App\Http\Controllers\DetalleRutinaController;
+use App\Http\Controllers\CategoriaController;
+use App\Http\Controllers\ProductoController;
+use App\Http\Controllers\ProveedorController;
+use App\Http\Controllers\CompraController;
+use App\Http\Controllers\VentaController;
+use App\Http\Controllers\UsuarioController;
+use App\Http\Controllers\ReporteController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\PortalClienteController;
+use App\Http\Controllers\PortalEntrenadorController;
+use App\Http\Controllers\ReservaController;
+use App\Http\Controllers\CajaController;
+use App\Http\Controllers\KardexController;
+use App\Http\Controllers\AuditoriaController;
+use App\Http\Controllers\ConfiguracionSistemaController;
+use App\Http\Controllers\ExperienciaClienteController;
+use App\Http\Controllers\ComunicacionAdminController;
+use App\Http\Controllers\ClienteFichaController;
+use App\Http\Controllers\GymSystemAdminController;
+
+// ESTADO REAL DEL SISTEMA: una sola conexión y una sola DB_DATABASE.
+Route::get('/estado-sistema', function () {
+    try {
+        $db = DB::connection();
+        $db->getPdo();
+        $schema = $db->getSchemaBuilder();
+
+        $tablas = [];
+        foreach ([
+            'clientes','membresias','cliente_membresia','pagos_membresia',
+            'entrenadores','rutinas','detalle_rutina','clases','reservas',
+            'asistencias','categorias','productos','proveedores','compras',
+            'detalle_compra','ventas','detalle_venta','cajas','movimientos_caja',
+            'movimientos_inventario','usuarios','auditorias'
+        ] as $tabla) {
+            if ($schema->hasTable($tabla)) {
+                $tablas[] = $tabla;
+            }
+        }
+
+        return response()->json([
+            'api' => true,
+            'database' => true,
+            'motor' => $db->getDriverName(),
+            'base_datos' => $db->getDatabaseName(),
+            'tablas_detectadas' => $tablas,
+            'mensaje' => 'La aplicación está conectada a su base principal y mantiene sincronización de compatibilidad con gym_system cuando está configurada.',
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'api' => true,
+            'database' => false,
+            'motor' => config('database.default'),
+            'base_datos' => config('database.connections.'.config('database.default').'.database'),
+            'mensaje' => 'La API responde, pero la base de datos no está disponible.',
+        ], 503);
+    }
+});
+
+Route::get('/informacion-gym', [ConfiguracionSistemaController::class, 'publico']);
+
+// AUTENTICACIÓN PRINCIPAL DEL SISTEMA: SANCTUM
+Route::prefix('auth')->group(function () {
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:3,1');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,5');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,5');
+    Route::post('/recovery-dni', [AuthController::class, 'recoveryByDni'])->middleware('throttle:3,5');
+    Route::post('/recovery-dni/reset', [AuthController::class, 'resetPasswordByDni'])->middleware('throttle:5,5');
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/me', [AuthController::class, 'me']);
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::post('/logout-todos', [AuthController::class, 'logoutTodos']);
+        Route::put('/cambiar-contrasena', [AuthController::class, 'cambiarContrasena']);
+    });
+});
+
+// MÓDULO JWT ACADÉMICO
+// Se mantiene separado de Sanctum para mostrar al profesor:
+// - sub = identificador del usuario
+// - claims adicionales: id_usuario, nombre_usuario, correo y rol
+Route::prefix('jwt')->group(function () {
+    Route::post('/login', [JwtAuthController::class, 'login'])->middleware('throttle:5,1');
+
+    Route::middleware('jwt')->group(function () {
+        Route::get('/me', [JwtAuthController::class, 'me']);
+        Route::get('/claims', [JwtAuthController::class, 'claims']);
+        Route::get('/solo-administrador', [JwtAuthController::class, 'soloAdministrador'])
+            ->middleware('rol:Administrador');
+    });
+});
+
+// INFORMACIÓN GENERAL PARA CUALQUIER USUARIO AUTENTICADO
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user', function (Request $request) {
+        return $request->user();
+    });
+
+    Route::apiResource('/membresias', MembresiaController::class)->only(['index', 'show']);
+    Route::apiResource('/clases', ClaseController::class)->only(['index', 'show']);
+});
+
+// PORTAL DEL CLIENTE: SOLO SUS PROPIOS DATOS
+Route::middleware(['auth:sanctum', 'rol:Cliente', 'auditoria'])->prefix('mi-cuenta')->group(function () {
+    Route::get('/resumen', [PortalClienteController::class, 'resumen']);
+    Route::get('/perfil', [PortalClienteController::class, 'perfil']);
+    Route::get('/perfil/foto', [PortalClienteController::class, 'fotoPerfil']);
+    Route::post('/perfil/foto', [PortalClienteController::class, 'actualizarFotoPerfil']);
+    Route::delete('/perfil/foto', [PortalClienteController::class, 'eliminarFotoPerfil']);
+    Route::put('/perfil', [PortalClienteController::class, 'actualizarPerfil']);
+    Route::get('/membresia', [PortalClienteController::class, 'membresia']);
+    Route::get('/pagos', [PortalClienteController::class, 'pagos']);
+    Route::get('/pagos/{idPago}/comprobante', [PortalClienteController::class, 'comprobante']);
+    Route::get('/rutinas', [PortalClienteController::class, 'rutinas']);
+    Route::get('/asistencias', [PortalClienteController::class, 'asistencias']);
+    Route::get('/compras', [PortalClienteController::class, 'compras']);
+    Route::get('/productos', [PortalClienteController::class, 'productos']);
+
+    // Flujo actual: entrenamiento guiado dentro del gimnasio.
+    Route::get('/entrenamiento-gym', [PortalClienteController::class, 'entrenamientoCasa']);
+    Route::put('/entrenamiento-gym/plan', [PortalClienteController::class, 'guardarPlanEntrenamiento']);
+    Route::post('/entrenamiento-gym/sesiones/iniciar', [PortalClienteController::class, 'iniciarSesionEntrenamientoCasa']);
+    Route::patch('/entrenamiento-gym/sesiones/{idSesion}', [PortalClienteController::class, 'actualizarSesionEntrenamientoCasa']);
+    Route::post('/entrenamiento-gym/sesiones/{idSesion}/cancelar', [PortalClienteController::class, 'cancelarSesionEntrenamientoCasa']);
+    Route::post('/entrenamiento-gym/sesiones', [PortalClienteController::class, 'registrarSesionEntrenamientoCasa']);
+
+    Route::post('/pagos/comprar', [SolicitudPagoMembresiaController::class, 'comprar']);
+    // Alias temporal para clientes antiguos del frontend.
+    Route::post('/pagos/solicitar', [SolicitudPagoMembresiaController::class, 'comprar']);
+    Route::post('/pagos/{idPago}/cancelar', [SolicitudPagoMembresiaController::class, 'cancelarPropia']);
+
+    Route::get('/reservas', [ReservaController::class, 'misReservas']);
+    Route::post('/reservas', [ReservaController::class, 'reservar']);
+    Route::post('/reservas/{id}/cancelar', [ReservaController::class, 'cancelarMia']);
+
+    Route::get('/progreso', [ExperienciaClienteController::class, 'progreso']);
+    Route::get('/meta', [ExperienciaClienteController::class, 'meta']);
+    Route::put('/meta', [ExperienciaClienteController::class, 'guardarMeta']);
+    Route::get('/calendario', [ExperienciaClienteController::class, 'calendario']);
+    Route::get('/notificaciones', [ExperienciaClienteController::class, 'notificaciones']);
+    Route::post('/notificaciones/{id}/leer', [ExperienciaClienteController::class, 'leerNotificacion']);
+    Route::post('/notificaciones/leer-todas', [ExperienciaClienteController::class, 'leerTodas']);
+    Route::get('/entrenador', [ExperienciaClienteController::class, 'entrenador']);
+    Route::get('/historial', [ExperienciaClienteController::class, 'historial']);
+    Route::get('/credencial', [ExperienciaClienteController::class, 'credencial']);
+    Route::get('/favoritos/clases', [ExperienciaClienteController::class, 'clasesFavoritas']);
+    Route::post('/favoritos/clases', [ExperienciaClienteController::class, 'agregarClaseFavorita']);
+    Route::delete('/favoritos/clases/{idClase}', [ExperienciaClienteController::class, 'quitarClaseFavorita']);
+    Route::get('/opiniones', [ExperienciaClienteController::class, 'opiniones']);
+    Route::post('/opiniones', [ExperienciaClienteController::class, 'guardarOpinion']);
+
+    Route::get('/soporte', [ExperienciaClienteController::class, 'soporte']);
+    Route::post('/soporte', [ExperienciaClienteController::class, 'crearSoporte']);
+});
+
+// PORTAL DEL ENTRENADOR: INFORMACION LIMITADA A SU PROPIA OPERACION
+Route::middleware(['auth:sanctum', 'rol:Entrenador', 'auditoria'])->prefix('mi-entrenador')->group(function () {
+    Route::get('/resumen', [PortalEntrenadorController::class, 'resumen']);
+    Route::get('/clientes', [PortalEntrenadorController::class, 'clientes']);
+    Route::get('/rutinas', [PortalEntrenadorController::class, 'rutinas']);
+    Route::get('/clases', [PortalEntrenadorController::class, 'clases']);
+    Route::get('/reservas', [PortalEntrenadorController::class, 'reservas']);
+});
+
+// OPERACIÓN DEL GIMNASIO: ADMINISTRADOR O ENTRENADOR
+// El entrenador NO recibe el CRUD general de clientes; usa /mi-entrenador/clientes,
+// que entrega solamente los datos mínimos necesarios para asignar rutinas.
+Route::middleware(['auth:sanctum', 'rol:Administrador,Entrenador', 'auditoria'])->group(function () {
+    Route::apiResource('/rutinas', RutinaController::class);
+    Route::apiResource('/detalle-rutinas', DetalleRutinaController::class);
+
+    Route::get('/reservas', [ReservaController::class, 'index']);
+    Route::put('/reservas/{id}/estado', [ReservaController::class, 'cambiarEstado']);
+});
+
+// ADMINISTRACIÓN Y CAJA
+Route::middleware(['auth:sanctum', 'rol:Administrador', 'auditoria'])->group(function () {
+    Route::apiResource('/personas', PersonaController::class);
+    Route::apiResource('/cursos', CursoController::class);
+
+    Route::apiResource('/membresias', MembresiaController::class)->except(['index', 'show']);
+    Route::apiResource('/clases', ClaseController::class)->except(['index', 'show']);
+    Route::apiResource('/clientes', ClienteController::class);
+    Route::get('/clientes/{id}/ficha', [ClienteFichaController::class, 'show']);
+
+    Route::apiResource('/asistencias', AsistenciaController::class)->only(['index', 'show']);
+    Route::post('/asistencias/entrada', [AsistenciaController::class, 'entrada']);
+    Route::post('/asistencias/salida', [AsistenciaController::class, 'salida']);
+    Route::post('/asistencias/acceso', [AsistenciaController::class, 'accesoPorCodigo']);
+    Route::get('/clientes/{idCliente}/asistencias', [AsistenciaController::class, 'historial']);
+
+    Route::apiResource('/cliente-membresias', ClienteMembresiaController::class)->only(['index', 'show']);
+    Route::apiResource('/pagos-membresia', PagoMembresiaController::class)->only(['index', 'show']);
+    Route::post('/pagos-membresia/{idPago}/confirmar', [SolicitudPagoMembresiaController::class, 'confirmar']);
+    Route::post('/pagos-membresia/{idPago}/rechazar', [SolicitudPagoMembresiaController::class, 'rechazar']);
+    Route::post('/membresias/contratar', [MembresiaProcesoController::class, 'contratar']);
+    Route::post('/membresias/renovar', [MembresiaProcesoController::class, 'renovar']);
+    Route::get('/clientes/{idCliente}/estado-membresia', [MembresiaProcesoController::class, 'estadoCliente']);
+    Route::get('/clientes/{idCliente}/historial-pagos', [MembresiaProcesoController::class, 'historialPagos']);
+    Route::get('/pagos-membresia/{idPago}/comprobante', [MembresiaProcesoController::class, 'comprobante']);
+
+    Route::apiResource('/entrenadores', EntrenadorController::class);
+
+    Route::apiResource('/categorias', CategoriaController::class);
+    Route::apiResource('/productos', ProductoController::class);
+    Route::get('/kardex', [KardexController::class, 'index']);
+    Route::post('/kardex/ajustar', [KardexController::class, 'ajustar']);
+
+    Route::apiResource('/proveedores', ProveedorController::class);
+    Route::apiResource('/compras', CompraController::class)->only(['index', 'store', 'show']);
+    Route::post('/compras/{id}/anular', [CompraController::class, 'anular']);
+
+    Route::apiResource('/ventas', VentaController::class)->only(['index', 'store', 'show']);
+    Route::post('/ventas/{id}/anular', [VentaController::class, 'anular']);
+
+    // CAJA EMPRESARIAL
+    Route::get('/caja/actual', [CajaController::class, 'actual']);
+    Route::post('/caja/abrir', [CajaController::class, 'abrir']);
+    Route::post('/caja/movimientos', [CajaController::class, 'movimiento']);
+    Route::post('/caja/cerrar', [CajaController::class, 'cerrar']);
+    Route::get('/caja/historial', [CajaController::class, 'historial']);
+
+    Route::apiResource('/usuarios', UsuarioController::class);
+    Route::get('/dashboard/resumen', [DashboardController::class, 'resumen']);
+    Route::get('/auditorias', [AuditoriaController::class, 'index']);
+
+    Route::get('/configuracion', [ConfiguracionSistemaController::class, 'show']);
+    Route::put('/configuracion', [ConfiguracionSistemaController::class, 'update']);
+    Route::get('/configuracion/estado', [ConfiguracionSistemaController::class, 'estado']);
+    Route::post('/configuracion/respaldo', [ConfiguracionSistemaController::class, 'respaldo']);
+    Route::post('/configuracion/limpiar-cache', [ConfiguracionSistemaController::class, 'limpiarCache']);
+
+    Route::get('/notificaciones-clientes', [ComunicacionAdminController::class, 'notificaciones']);
+    Route::post('/notificaciones-clientes', [ComunicacionAdminController::class, 'enviarNotificacion']);
+    Route::delete('/notificaciones-clientes/{id}', [ComunicacionAdminController::class, 'eliminarNotificacion']);
+    Route::get('/soporte-clientes', [ComunicacionAdminController::class, 'soporte']);
+    Route::put('/soporte-clientes/{id}/responder', [ComunicacionAdminController::class, 'responderSoporte']);
+    Route::put('/soporte-clientes/{id}/cerrar', [ComunicacionAdminController::class, 'cerrarSoporte']);
+
+    Route::get('/opiniones-clientes', [ComunicacionAdminController::class, 'opiniones']);
+    Route::put('/opiniones-clientes/{id}/estado', [ComunicacionAdminController::class, 'cambiarEstadoOpinion']);
+
+    Route::get('/reportes/ingresos', [ReporteController::class, 'ingresos']);
+    Route::get('/reportes/vencimientos', [ReporteController::class, 'vencimientos']);
+    Route::get('/reportes/asistencias', [ReporteController::class, 'asistencias']);
+
+    Route::get('/vistas/clientes-membresias', [ReporteController::class, 'clientesMembresias']);
+    Route::get('/vistas/stock', [ReporteController::class, 'stock']);
+    Route::get('/vistas/ventas', [ReporteController::class, 'ventas']);
+    // FUNCIONES LEGACY DEL DASHBOARD: usan la misma DB_DATABASE que el resto del sistema.
+    // Se mantienen en un prefijo separado solo por compatibilidad de rutas.
+    Route::prefix('gym-admin')->group(function () {
+        Route::get('/estado', [GymSystemAdminController::class, 'estado']);
+        Route::post('/dashboard/filtrar', [GymSystemAdminController::class, 'filtrarDashboard']);
+
+        Route::get('/socios', [GymSystemAdminController::class, 'socios']);
+        Route::get('/socios/{id}/ficha', [GymSystemAdminController::class, 'fichaSocio']);
+        Route::get('/socios/{id}', [GymSystemAdminController::class, 'socio']);
+        Route::post('/socios', [GymSystemAdminController::class, 'guardarSocio']);
+        Route::put('/socios/{id}', [GymSystemAdminController::class, 'actualizarSocio']);
+        Route::put('/socios/{id}/estado', [GymSystemAdminController::class, 'cambiarEstadoSocio']);
+
+        Route::get('/planes', [GymSystemAdminController::class, 'planes']);
+        Route::get('/planes/{id}', [GymSystemAdminController::class, 'plan']);
+        Route::post('/planes', [GymSystemAdminController::class, 'guardarPlan']);
+        Route::put('/planes/{id}', [GymSystemAdminController::class, 'actualizarPlan']);
+        Route::put('/planes/{id}/estado', [GymSystemAdminController::class, 'cambiarEstadoPlan']);
+
+        Route::get('/suscripciones', [GymSystemAdminController::class, 'suscripciones']);
+        Route::post('/suscripciones', [GymSystemAdminController::class, 'guardarSuscripcion']);
+        Route::put('/suscripciones/{id}/cancelar', [GymSystemAdminController::class, 'cancelarSuscripcion']);
+        Route::get('/suscripciones/exportar', [GymSystemAdminController::class, 'exportarSuscripciones']);
+
+        Route::get('/asistencias', [GymSystemAdminController::class, 'asistencias']);
+        Route::post('/asistencias/validar', [GymSystemAdminController::class, 'validarAsistencia']);
+        Route::post('/asistencias/entrada', [GymSystemAdminController::class, 'registrarAsistencia']);
+        Route::post('/asistencias/salida', [GymSystemAdminController::class, 'registrarSalida']);
+        Route::get('/asistencias/reporte', [GymSystemAdminController::class, 'reporteAsistencias']);
+        Route::get('/asistencias/exportar', [GymSystemAdminController::class, 'exportarAsistencias']);
+
+        Route::get('/caja/actual', [GymSystemAdminController::class, 'cajaActual']);
+        Route::post('/caja/abrir', [GymSystemAdminController::class, 'abrirCaja']);
+        Route::post('/caja/movimientos', [GymSystemAdminController::class, 'movimientoCaja']);
+        Route::post('/caja/cerrar', [GymSystemAdminController::class, 'cerrarCaja']);
+        Route::get('/caja/historial', [GymSystemAdminController::class, 'historialCaja']);
+
+        Route::get('/gastos', [GymSystemAdminController::class, 'gastos']);
+        Route::post('/gastos', [GymSystemAdminController::class, 'guardarGasto']);
+        Route::put('/gastos/{id}/anular', [GymSystemAdminController::class, 'anularGasto']);
+
+        Route::get('/categorias', [GymSystemAdminController::class, 'categorias']);
+        Route::post('/categorias', [GymSystemAdminController::class, 'guardarCategoria']);
+        Route::put('/categorias/{id}', [GymSystemAdminController::class, 'actualizarCategoria']);
+        Route::put('/categorias/{id}/estado', [GymSystemAdminController::class, 'cambiarEstadoCategoria']);
+
+        Route::get('/productos', [GymSystemAdminController::class, 'productos']);
+        Route::get('/productos/{id}', [GymSystemAdminController::class, 'producto']);
+        Route::post('/productos', [GymSystemAdminController::class, 'guardarProducto']);
+        Route::put('/productos/{id}', [GymSystemAdminController::class, 'actualizarProducto']);
+        Route::put('/productos/{id}/estado', [GymSystemAdminController::class, 'cambiarEstadoProducto']);
+        Route::post('/productos/ajustar-stock', [GymSystemAdminController::class, 'ajustarStock']);
+        Route::get('/kardex', [GymSystemAdminController::class, 'kardex']);
+
+        Route::get('/ventas', [GymSystemAdminController::class, 'ventas']);
+        Route::get('/ventas/{id}', [GymSystemAdminController::class, 'venta']);
+        Route::post('/ventas', [GymSystemAdminController::class, 'registrarVenta']);
+        Route::put('/ventas/{id}/anular', [GymSystemAdminController::class, 'anularVenta']);
+
+        Route::get('/usuarios', [GymSystemAdminController::class, 'usuarios']);
+        Route::post('/usuarios', [GymSystemAdminController::class, 'guardarUsuario']);
+        Route::put('/usuarios/{id}', [GymSystemAdminController::class, 'actualizarUsuario']);
+        Route::put('/usuarios/{id}/estado', [GymSystemAdminController::class, 'cambiarEstadoUsuario']);
+
+        Route::get('/progreso/{socioId}', [GymSystemAdminController::class, 'progreso']);
+        Route::post('/progreso/medidas', [GymSystemAdminController::class, 'guardarMedida']);
+        Route::delete('/progreso/medidas/{id}', [GymSystemAdminController::class, 'eliminarMedida']);
+        Route::post('/progreso/rutina', [GymSystemAdminController::class, 'guardarRutinaReferencia']);
+
+        Route::get('/notificaciones/vencimientos', [GymSystemAdminController::class, 'vencimientosNotificacion']);
+        Route::put('/notificaciones/socios/{id}/api-key', [GymSystemAdminController::class, 'guardarWhatsappKey']);
+        Route::post('/notificaciones/socios/{id}/enviar', [GymSystemAdminController::class, 'enviarWhatsapp']);
+        Route::post('/notificaciones/enviar-todos', [GymSystemAdminController::class, 'enviarWhatsappTodos']);
+
+        Route::get('/reportes/ingresos', [GymSystemAdminController::class, 'reporteIngresos']);
+        Route::get('/reportes/vencimientos', [GymSystemAdminController::class, 'reporteVencimientos']);
+
+        Route::get('/configuracion', [GymSystemAdminController::class, 'configuracion']);
+        Route::put('/configuracion', [GymSystemAdminController::class, 'guardarConfiguracion']);
+
+        Route::get('/mantenimiento/backup', [GymSystemAdminController::class, 'backup']);
+        Route::post('/mantenimiento/restaurar', [GymSystemAdminController::class, 'restaurar']);
+        Route::post('/mantenimiento/limpiar', [GymSystemAdminController::class, 'limpiar']);
+        Route::post('/mantenimiento/limpiar-cache', [GymSystemAdminController::class, 'limpiarCache']);
+
+        Route::get('/documentos/carnet/{socioId}', [GymSystemAdminController::class, 'carnet']);
+        Route::get('/documentos/comprobante/{suscripcionId}', [GymSystemAdminController::class, 'comprobante']);
+        Route::get('/documentos/ticket/{ventaId}', [GymSystemAdminController::class, 'ticket']);
+    });
+});

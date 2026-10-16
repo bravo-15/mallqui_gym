@@ -1,0 +1,3 @@
+/* El comportamiento del sidebar se controla desde mallqui-admin.css y el componente Angular.
+   Este archivo queda solo como compatibilidad global para evitar reglas antiguas en conflicto. */
+.admin-shell{transition:grid-template-columns .28s ease}

@@ -1,0 +1,592 @@
+import { CommonModule } from '@angular/common';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+
+@Component({
+  selector: 'app-exercise-demo',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <section class="exercise-demo" [class.is-paused]="pausado">
+      <header class="exercise-demo-head">
+        <div>
+          <span>GUÍA VISUAL</span>
+          <h3>{{ejercicio?.nombre || 'Ejercicio'}}</h3>
+          <p>{{mensajeGuia}}</p>
+        </div>
+        <em>{{pausado ? 'PAUSADO' : 'EN MOVIMIENTO'}}</em>
+      </header>
+
+      <div class="exercise-demo-stage" [attr.data-demo]="modo">
+        <div class="demo-grid"></div>
+        <span class="demo-side" *ngIf="ejercicio?.por_lado">
+          {{lado === 'derecho' ? 'LADO DERECHO' : 'LADO IZQUIERDO'}}
+        </span>
+
+        <div
+          *ngIf="mostrarImagenHumana"
+          class="exercise-human-motion"
+          [class.mirror]="ejercicio?.por_lado && lado==='izquierdo'">
+          <img
+            class="exercise-human-image"
+            [src]="gifUrl"
+            (error)="falloImagenHumana()"
+            [alt]="'Persona realizando '+(ejercicio?.nombre || 'ejercicio')">
+          <span class="exercise-media-badge">DEMOSTRACIÓN REAL</span>
+        </div>
+
+        <svg *ngIf="!mostrarImagenHumana" viewBox="0 0 360 250" role="img" [attr.aria-label]="'Persona demostrando '+(ejercicio?.nombre || 'ejercicio')">
+          <defs>
+            <linearGradient id="skinFill" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#f2c39f"></stop>
+              <stop offset="100%" stop-color="#c9875f"></stop>
+            </linearGradient>
+            <linearGradient id="shirtStroke" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#8995a3"></stop>
+              <stop offset="100%" stop-color="#4d5968"></stop>
+            </linearGradient>
+            <linearGradient id="pantsStroke" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#303948"></stop>
+              <stop offset="100%" stop-color="#151d29"></stop>
+            </linearGradient>
+            <filter id="personShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#00101f" flood-opacity=".32"></feDropShadow>
+            </filter>
+          </defs>
+
+          <line class="demo-floor" x1="34" y1="220" x2="326" y2="220"></line>
+
+          <!-- De pie / marcha / talones / brazos -->
+          <g *ngIf="['standing','march','calf','arms','palms','row','abduction','kickback'].includes(modo)" class="pose pose-standing">
+            <circle class="body-head" cx="180" cy="52" r="17"></circle>
+            <line class="body-torso" x1="180" y1="70" x2="180" y2="142"></line>
+
+            <g class="arm-left">
+              <line class="body-limb" x1="180" y1="84" x2="145" y2="112"></line>
+              <line class="body-limb" x1="145" y1="112" x2="135" y2="149"></line>
+            </g>
+            <g class="arm-right">
+              <line class="body-limb" x1="180" y1="84" x2="215" y2="112"></line>
+              <line class="body-limb" x1="215" y1="112" x2="225" y2="149"></line>
+            </g>
+
+            <g class="leg-left">
+              <line class="body-limb body-leg" x1="180" y1="142" x2="157" y2="181"></line>
+              <line class="body-limb body-leg" x1="157" y1="181" x2="151" y2="219"></line>
+            </g>
+            <g class="leg-right">
+              <line class="body-limb body-leg" x1="180" y1="142" x2="203" y2="181"></line>
+              <line class="body-limb body-leg" x1="203" y1="181" x2="209" y2="219"></line>
+            </g>
+          </g>
+
+          <!-- Sentadilla -->
+          <g *ngIf="modo==='squat'" class="pose pose-squat">
+            <g class="squat-upper">
+              <circle class="body-head" cx="180" cy="52" r="17"></circle>
+              <line class="body-torso" x1="180" y1="70" x2="180" y2="139"></line>
+              <line class="body-limb" x1="180" y1="88" x2="144" y2="111"></line>
+              <line class="body-limb" x1="144" y1="111" x2="122" y2="91"></line>
+              <line class="body-limb" x1="180" y1="88" x2="216" y2="111"></line>
+              <line class="body-limb" x1="216" y1="111" x2="238" y2="91"></line>
+            </g>
+            <g class="squat-legs">
+              <polyline class="body-limb body-leg" points="180,139 151,174 129,218"></polyline>
+              <polyline class="body-limb body-leg" points="180,139 209,174 231,218"></polyline>
+            </g>
+            <rect class="demo-prop" x="250" y="170" width="54" height="12" rx="5"></rect>
+            <line class="demo-prop-line" x1="258" y1="182" x2="258" y2="220"></line>
+            <line class="demo-prop-line" x1="296" y1="182" x2="296" y2="220"></line>
+          </g>
+
+          <!-- Zancada -->
+          <g *ngIf="modo==='lunge'" class="pose pose-lunge">
+            <g class="lunge-upper">
+              <circle class="body-head" cx="180" cy="49" r="17"></circle>
+              <line class="body-torso" x1="180" y1="67" x2="180" y2="139"></line>
+              <line class="body-limb" x1="180" y1="85" x2="147" y2="115"></line>
+              <line class="body-limb" x1="180" y1="85" x2="213" y2="115"></line>
+            </g>
+            <g class="lunge-front">
+              <polyline class="body-limb body-leg" points="180,139 151,174 151,218"></polyline>
+            </g>
+            <g class="lunge-back">
+              <polyline class="body-limb body-leg" points="180,139 214,173 249,218"></polyline>
+            </g>
+          </g>
+
+          <!-- Pared -->
+          <g *ngIf="modo==='wall'" class="pose pose-wall">
+            <line class="demo-wall" x1="287" y1="36" x2="287" y2="220"></line>
+            <g class="wall-person">
+              <circle class="body-head" cx="153" cy="63" r="17"></circle>
+              <line class="body-torso" x1="162" y1="79" x2="193" y2="147"></line>
+              <polyline class="body-limb" points="170,91 221,109 278,109"></polyline>
+              <polyline class="body-limb body-leg" points="193,147 169,180 156,219"></polyline>
+              <polyline class="body-limb body-leg" points="193,147 205,184 212,219"></polyline>
+            </g>
+          </g>
+
+          <!-- Bird dog -->
+          <g *ngIf="modo==='birddog'" class="pose pose-birddog">
+            <circle class="body-head" cx="111" cy="118" r="15"></circle>
+            <line class="body-torso" x1="128" y1="130" x2="216" y2="142"></line>
+            <g class="bird-arm-active">
+              <line class="body-limb" x1="139" y1="133" x2="84" y2="153"></line>
+              <line class="body-limb" x1="84" y1="153" x2="49" y2="138"></line>
+            </g>
+            <g class="bird-arm-base">
+              <polyline class="body-limb" points="151,136 139,178 130,219"></polyline>
+            </g>
+            <g class="bird-leg-active">
+              <line class="body-limb body-leg" x1="211" y1="142" x2="267" y2="146"></line>
+              <line class="body-limb body-leg" x1="267" y1="146" x2="317" y2="132"></line>
+            </g>
+            <g class="bird-leg-base">
+              <polyline class="body-limb body-leg" points="202,145 199,184 214,219"></polyline>
+            </g>
+          </g>
+
+          <!-- Dead bug -->
+          <g *ngIf="modo==='deadbug'" class="pose pose-deadbug">
+            <circle class="body-head" cx="91" cy="176" r="15"></circle>
+            <line class="body-torso" x1="108" y1="176" x2="199" y2="176"></line>
+            <g class="dead-arm-left">
+              <line class="body-limb" x1="136" y1="174" x2="136" y2="116"></line>
+              <line class="body-limb" x1="136" y1="116" x2="119" y2="78"></line>
+            </g>
+            <g class="dead-arm-right">
+              <line class="body-limb" x1="151" y1="174" x2="170" y2="116"></line>
+              <line class="body-limb" x1="170" y1="116" x2="205" y2="85"></line>
+            </g>
+            <g class="dead-leg-left">
+              <polyline class="body-limb body-leg" points="198,176 229,146 247,111"></polyline>
+            </g>
+            <g class="dead-leg-right">
+              <polyline class="body-limb body-leg" points="198,176 239,182 287,181"></polyline>
+            </g>
+          </g>
+
+          <!-- Puente de cadera -->
+          <g *ngIf="modo==='bridge'" class="pose pose-bridge">
+            <circle class="body-head" cx="83" cy="184" r="15"></circle>
+            <line class="body-torso bridge-torso" x1="101" y1="184" x2="201" y2="164"></line>
+            <g class="bridge-hip">
+              <polyline class="body-limb body-leg" points="198,165 234,184 246,219"></polyline>
+              <polyline class="body-limb body-leg" points="190,168 217,191 221,219"></polyline>
+            </g>
+            <line class="body-limb" x1="120" y1="185" x2="84" y2="211"></line>
+          </g>
+
+          <!-- Cobra -->
+          <g *ngIf="modo==='cobra'" class="pose pose-cobra">
+            <g class="cobra-upper">
+              <circle class="body-head" cx="104" cy="126" r="15"></circle>
+              <line class="body-torso" x1="120" y1="137" x2="202" y2="178"></line>
+              <polyline class="body-limb" points="142,148 126,184 121,219"></polyline>
+              <polyline class="body-limb" points="158,157 150,190 149,219"></polyline>
+            </g>
+            <line class="body-limb body-leg" x1="202" y1="178" x2="298" y2="213"></line>
+          </g>
+
+          <!-- Respiración -->
+          <g *ngIf="modo==='breathe'" class="pose pose-breathe">
+            <circle class="body-head" cx="180" cy="52" r="17"></circle>
+            <line class="body-torso" x1="180" y1="70" x2="180" y2="150"></line>
+            <line class="body-limb" x1="180" y1="88" x2="147" y2="128"></line>
+            <line class="body-limb" x1="180" y1="88" x2="213" y2="128"></line>
+            <polyline class="body-limb body-leg" points="180,150 154,184 151,219"></polyline>
+            <polyline class="body-limb body-leg" points="180,150 206,184 209,219"></polyline>
+            <circle class="breath-ring one" cx="180" cy="112" r="24"></circle>
+            <circle class="breath-ring two" cx="180" cy="112" r="24"></circle>
+          </g>
+        </svg>
+
+        <div class="demo-caption">
+          <span>{{pasoCorto}}</span>
+          <b>{{prescripcion}}</b>
+        </div>
+      </div>
+
+      <footer class="exercise-demo-foot">
+        <span><i></i> Muévete con control</span>
+        <span *ngIf="ejercicio?.por_lado">↔ Cambia de lado cuando el sistema lo indique</span>
+        <span>■ Detente si algo duele</span>
+      </footer>
+    </section>
+  `,
+  styles: [`
+    :host{display:block;min-width:0}
+    .exercise-demo{display:grid;gap:14px;min-width:0;color:#eef6fb;font-family:Inter,"Segoe UI",Arial,sans-serif}
+    .exercise-demo-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+    .exercise-demo-head>div>span{display:block;font-size:9px;font-weight:950;letter-spacing:1.15px;color:#ff7188}
+    .exercise-demo-head h3{margin:4px 0 3px;font-size:22px;color:#fff;line-height:1.1;font-weight:950;letter-spacing:-.3px;text-shadow:0 2px 10px rgba(0,0,0,.18)}
+    .exercise-demo-head p{margin:0;max-width:520px;font-size:11px;line-height:1.55;color:#b7cad8}
+    .exercise-demo-head em{font-style:normal;padding:6px 9px;border-radius:999px;background:rgba(32,225,162,.11);border:1px solid rgba(72,237,188,.14);color:#59efbf;font-size:8px;font-weight:950;box-shadow:0 0 14px rgba(32,225,162,.06)}
+    .exercise-demo.is-paused .exercise-demo-head em{background:rgba(255,174,55,.12);border-color:rgba(255,183,72,.16);color:#ffc36b}
+    .exercise-demo-stage{position:relative;min-height:330px;overflow:hidden;border-radius:20px;border:1px solid rgba(183,212,232,.11);background:linear-gradient(145deg,#071a32,#0b3159);box-shadow:0 14px 30px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05)}
+    .demo-grid{position:absolute;inset:0;background:linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);background-size:30px 30px;mask-image:linear-gradient(to bottom,transparent,black 22%,black 85%,transparent)}
+    .exercise-demo-stage:after{
+      content:'PERSONA · GUÍA DE MOVIMIENTO';
+      position:absolute;
+      z-index:4;
+      right:18px;
+      top:18px;
+      padding:7px 10px;
+      border-radius:999px;
+      background:rgba(255,255,255,.10);
+      border:1px solid rgba(255,255,255,.10);
+      color:#dbe7f2;
+      font-size:7px;
+      font-weight:900;
+      letter-spacing:.75px;
+      backdrop-filter:blur(8px)
+    }
+    .exercise-demo-stage:before{content:'';position:absolute;width:220px;height:220px;right:-70px;top:-80px;border-radius:50%;background:radial-gradient(circle,rgba(239,35,60,.18),transparent 68%)}
+    .exercise-demo-stage svg{position:relative;z-index:2;display:block;width:100%;height:280px;padding:18px 26px 0;box-sizing:border-box}
+    .exercise-human-motion{
+      position:absolute;
+      z-index:2;
+      inset:0;
+      overflow:hidden;
+      background:#071a32
+    }
+    .exercise-human-motion.mirror{
+      transform:scaleX(-1)
+    }
+    .exercise-human-image{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      object-position:center 38%;
+      display:block;
+      background:linear-gradient(145deg,#071a32,#0b3159);
+      filter:saturate(.98) contrast(1.035)
+    }
+    .exercise-media-badge{
+      position:absolute;
+      z-index:5;
+      left:18px;
+      bottom:70px;
+      padding:7px 10px;
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      background:rgba(5,25,47,.72);
+      color:#eaf4ff;
+      font-size:7px;
+      font-weight:900;
+      letter-spacing:.85px;
+      backdrop-filter:blur(8px)
+    }
+    .demo-floor{stroke:rgba(255,255,255,.18);stroke-width:5;stroke-linecap:round}
+    .body-head{
+      fill:url(#skinFill);
+      stroke:#7b4d35;
+      stroke-width:2;
+      filter:url(#personShadow)
+    }
+    .body-torso{
+      fill:none;
+      stroke:url(#shirtStroke);
+      stroke-width:30;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+      filter:url(#personShadow)
+    }
+    .body-limb{
+      fill:none;
+      stroke:#d99b72;
+      stroke-width:15;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+      filter:url(#personShadow)
+    }
+    .body-leg{
+      stroke:url(#pantsStroke);
+      stroke-width:19
+    }
+    .demo-prop{fill:rgba(255,255,255,.14);stroke:rgba(255,255,255,.24)}
+    .demo-prop-line,.demo-wall{stroke:rgba(255,255,255,.28);stroke-width:5;stroke-linecap:round}
+    .pose g,.pose line,.pose polyline,.pose circle{transform-box:fill-box}
+    .demo-side{position:absolute;z-index:4;left:18px;top:18px;padding:7px 9px;border-radius:999px;background:rgba(239,35,60,.92);color:#fff;font-size:8px;font-weight:900;letter-spacing:.8px}
+    .demo-caption{position:absolute;z-index:4;left:18px;right:18px;bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px;border-radius:12px;background:rgba(5,20,40,.72);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(10px)}
+    .demo-caption span{font-size:10px;color:#c6d5e3}
+    .demo-caption b{font-size:10px;color:#fff;text-align:right}
+    .exercise-demo-foot{display:flex;flex-wrap:wrap;gap:8px 14px}
+    .exercise-demo-foot span{display:inline-flex;align-items:center;gap:6px;font-size:9px;color:#9fb4c4;font-weight:700}
+    .exercise-demo-foot i{width:7px;height:7px;border-radius:50%;background:#2be0a3;box-shadow:0 0 10px rgba(43,224,163,.28)}
+
+    .is-paused .pose *{animation-play-state:paused!important}
+
+    /* Standing animation families */
+    [data-demo="standing"] .pose-standing{animation:floatBody 2.4s ease-in-out infinite}
+    [data-demo="march"] .leg-left{transform-origin:top center;animation:marchLeft 1.15s ease-in-out infinite}
+    [data-demo="march"] .leg-right{transform-origin:top center;animation:marchRight 1.15s ease-in-out infinite}
+    [data-demo="march"] .arm-left{transform-origin:top center;animation:armWalkLeft 1.15s ease-in-out infinite}
+    [data-demo="march"] .arm-right{transform-origin:top center;animation:armWalkRight 1.15s ease-in-out infinite}
+    [data-demo="calf"] .pose-standing{animation:calfRaise 1.8s ease-in-out infinite}
+    [data-demo="arms"] .arm-left{transform-origin:top right;animation:armRaiseLeft 2s ease-in-out infinite}
+    [data-demo="arms"] .arm-right{transform-origin:top left;animation:armRaiseRight 2s ease-in-out infinite}
+    [data-demo="palms"] .arm-left{transform-origin:top right;animation:palmsLeft 1.6s ease-in-out infinite}
+    [data-demo="palms"] .arm-right{transform-origin:top left;animation:palmsRight 1.6s ease-in-out infinite}
+    [data-demo="row"] .arm-left{transform-origin:top right;animation:rowLeft 1.8s ease-in-out infinite}
+    [data-demo="row"] .arm-right{transform-origin:top left;animation:rowRight 1.8s ease-in-out infinite}
+    [data-demo="abduction"] .leg-left{transform-origin:top center;animation:abductLeft 2s ease-in-out infinite}
+    [data-demo="kickback"] .leg-right{transform-origin:top center;animation:kickBack 2s ease-in-out infinite}
+
+    .squat-upper{animation:squatUpper 2.2s ease-in-out infinite}
+    .squat-legs{animation:squatLegs 2.2s ease-in-out infinite}
+    .lunge-upper{animation:lungeUpper 2.4s ease-in-out infinite}
+    .lunge-front{transform-origin:top center;animation:lungeFront 2.4s ease-in-out infinite}
+    .lunge-back{transform-origin:top center;animation:lungeBack 2.4s ease-in-out infinite}
+    .wall-person{transform-origin:center;animation:wallPush 2s ease-in-out infinite}
+    .bird-arm-active{transform-origin:right center;animation:birdArm 2.3s ease-in-out infinite}
+    .bird-leg-active{transform-origin:left center;animation:birdLeg 2.3s ease-in-out infinite}
+    .dead-arm-right{transform-origin:left bottom;animation:deadArm 2.4s ease-in-out infinite}
+    .dead-leg-right{transform-origin:left center;animation:deadLeg 2.4s ease-in-out infinite}
+    .bridge-torso,.bridge-hip{animation:bridgeLift 2.2s ease-in-out infinite}
+    .cobra-upper{transform-origin:right bottom;animation:cobraLift 2.6s ease-in-out infinite}
+    .breath-ring{fill:none;stroke:#ff5268;stroke-width:4;transform-origin:center;opacity:0}
+    .breath-ring.one{animation:breatheRing 3.8s ease-out infinite}
+    .breath-ring.two{animation:breatheRing 3.8s 1.9s ease-out infinite}
+
+    @keyframes floatBody{50%{transform:translateY(-4px)}}
+    @keyframes calfRaise{50%{transform:translateY(-11px)}}
+    @keyframes marchLeft{50%{transform:rotate(-23deg) translateY(-8px)}}
+    @keyframes marchRight{50%{transform:rotate(20deg) translateY(5px)}}
+    @keyframes armWalkLeft{50%{transform:rotate(17deg)}}
+    @keyframes armWalkRight{50%{transform:rotate(-17deg)}}
+    @keyframes armRaiseLeft{50%{transform:rotate(72deg) translate(8px,-3px)}}
+    @keyframes armRaiseRight{50%{transform:rotate(-72deg) translate(-8px,-3px)}}
+    @keyframes palmsLeft{50%{transform:rotate(-24deg) translate(10px,-3px)}}
+    @keyframes palmsRight{50%{transform:rotate(24deg) translate(-10px,-3px)}}
+    @keyframes rowLeft{50%{transform:rotate(28deg) translate(3px,-4px)}}
+    @keyframes rowRight{50%{transform:rotate(-28deg) translate(-3px,-4px)}}
+    @keyframes abductLeft{50%{transform:rotate(29deg)}}
+    @keyframes kickBack{50%{transform:rotate(-25deg) translateX(10px)}}
+    @keyframes squatUpper{50%{transform:translateY(29px)}}
+    @keyframes squatLegs{50%{transform:translateY(18px) scaleY(.84)}}
+    @keyframes lungeUpper{50%{transform:translateY(22px)}}
+    @keyframes lungeFront{50%{transform:rotate(8deg) translateY(8px)}}
+    @keyframes lungeBack{50%{transform:rotate(-8deg) translateY(8px)}}
+    @keyframes wallPush{50%{transform:translate(33px,5px) rotate(2deg)}}
+    @keyframes birdArm{50%{transform:rotate(-17deg) translateX(-11px)}}
+    @keyframes birdLeg{50%{transform:rotate(10deg) translateX(10px)}}
+    @keyframes deadArm{50%{transform:rotate(-36deg) translate(12px,14px)}}
+    @keyframes deadLeg{50%{transform:rotate(27deg) translate(-4px,20px)}}
+    @keyframes bridgeLift{50%{transform:translateY(-24px) rotate(-3deg)}}
+    @keyframes cobraLift{50%{transform:rotate(-14deg) translateY(-15px)}}
+    @keyframes breatheRing{0%{transform:scale(.65);opacity:.7}70%,100%{transform:scale(1.7);opacity:0}}
+
+    /* V90 legibilidad global del demo */
+    .exercise-demo-head>div>span{font-size:11px!important;letter-spacing:1px}
+    .exercise-demo-head h3{font-size:28px!important;line-height:1.08!important}
+    .exercise-demo-head p{font-size:14px!important;line-height:1.55!important}
+    .exercise-demo-head em{font-size:10px!important;padding:8px 11px!important}
+    .exercise-demo-stage:after{font-size:9px!important;padding:8px 11px!important}
+    .exercise-media-badge{font-size:9px!important;padding:8px 11px!important}
+    .demo-side{font-size:10px!important;padding:8px 10px!important}
+    .demo-caption{padding:12px 14px!important}
+    .demo-caption span{font-size:13px!important;line-height:1.4!important}
+    .demo-caption b{font-size:13px!important;line-height:1.35!important}
+    .exercise-demo-foot{gap:10px 16px!important}
+    .exercise-demo-foot span{font-size:11.5px!important;line-height:1.4!important}
+    .exercise-demo-foot i{width:8px!important;height:8px!important}
+    .exercise-demo-stage{min-height:360px!important}
+
+    @media(max-width:700px){
+      .exercise-demo-stage{min-height:290px}
+      .exercise-demo-stage svg{height:245px;padding-left:10px;padding-right:10px}
+      .exercise-demo-head{align-items:flex-start;flex-direction:column}
+      .exercise-demo-head h3{font-size:18px}
+      .demo-caption{align-items:flex-start;flex-direction:column}
+      .demo-caption b{text-align:left}
+    }
+    @media(prefers-reduced-motion:reduce){
+      .pose *,.pose,.breath-ring{animation:none!important}
+    }
+  `]
+})
+export class ExerciseDemoComponent implements OnChanges {
+  @Input() ejercicio: any = null;
+  @Input() pausado = false;
+  @Input() lado: 'derecho' | 'izquierdo' = 'derecho';
+
+  mediaFallida = false;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['ejercicio']) this.mediaFallida = false;
+  }
+
+  get gifUrl(): string {
+    const id = String(this.ejercicio?.id || '');
+    const mapa: Record<string,string> = {
+      sentadilla_silla:'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1300&q=88',
+      zancada_asistida:'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=1300&q=88',
+      talones:'https://images.unsplash.com/photo-1579758629938-03607ccdbaba?auto=format&fit=crop&w=1300&q=88',
+      marcha:'https://images.unsplash.com/photo-1599058917212-d750089bc07e?auto=format&fit=crop&w=1300&q=88',
+      flexion_pared_brazos:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      circulos_brazos:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      empuje_palmas:'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?auto=format&fit=crop&w=1300&q=88',
+      extension_triceps_pared:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      flexion_pared_pecho:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1300&q=88',
+      presion_pecho:'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?auto=format&fit=crop&w=1300&q=88',
+      apertura_brazos:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      plancha_pared_pecho:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      bird_dog_espalda:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      angel_pared:'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=1300&q=88',
+      remo_isometrico:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      cobra_suave:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      elevacion_lateral_hombros:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      deslizamiento_pared:'https://images.unsplash.com/photo-1599058917212-d750089bc07e?auto=format&fit=crop&w=1300&q=88',
+      rotacion_externa:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      circulos_hombros:'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=1300&q=88',
+      puente_gluteos:'https://images.unsplash.com/photo-1579758629938-03607ccdbaba?auto=format&fit=crop&w=1300&q=88',
+      abduccion_pie:'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1300&q=88',
+      patada_atras:'https://images.unsplash.com/photo-1579758629938-03607ccdbaba?auto=format&fit=crop&w=1300&q=88',
+      sentadilla_gluteos:'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1300&q=88',
+      dead_bug:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      bird_dog_core:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      rodilla_mano:'https://images.unsplash.com/photo-1599058917212-d750089bc07e?auto=format&fit=crop&w=1300&q=88',
+      respiracion_core:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1300&q=88',
+      sentadilla_mancuernas:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      prensa_piernas:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1300&q=88',
+      extension_cuadriceps:'https://images.unsplash.com/photo-1579758629938-03607ccdbaba?auto=format&fit=crop&w=1300&q=88',
+      curl_femoral:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1300&q=88',
+      curl_biceps_mancuernas:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      curl_martillo:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      triceps_polea:'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?auto=format&fit=crop&w=1300&q=88',
+      triceps_mancuerna:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      press_banca_mancuernas:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1300&q=88',
+      press_pecho_maquina:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      aperturas_mancuernas:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      flexiones_banco:'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1300&q=88',
+      jalon_pecho:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      remo_sentado:'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=1300&q=88',
+      remo_mancuerna:'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=1300&q=88',
+      pullover_polea:'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?auto=format&fit=crop&w=1300&q=88',
+      press_hombros:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      elevacion_lateral_mancuernas:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      face_pull:'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?auto=format&fit=crop&w=1300&q=88',
+      elevacion_frontal_mancuernas:'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=1300&q=88',
+      hip_thrust_banco:'https://images.unsplash.com/photo-1579758629938-03607ccdbaba?auto=format&fit=crop&w=1300&q=88',
+      sentadilla_sumo_mancuerna:'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1300&q=88',
+      abduccion_maquina:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1300&q=88',
+      patada_polea:'https://images.unsplash.com/photo-1579758629938-03607ccdbaba?auto=format&fit=crop&w=1300&q=88',
+      crunch_maquina:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      plancha_colchoneta:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1300&q=88',
+      elevacion_rodillas_banco:'https://images.unsplash.com/photo-1599058917212-d750089bc07e?auto=format&fit=crop&w=1300&q=88',
+      pallof_polea:'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?auto=format&fit=crop&w=1300&q=88'
+    };
+    return mapa[id] || 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=1300&q=88';
+  }
+
+  get mostrarImagenHumana(): boolean {
+    return Boolean(this.gifUrl) && !this.mediaFallida;
+  }
+
+  falloImagenHumana(): void {
+    this.mediaFallida = true;
+  }
+
+  get modo(): string {
+    const id = String(this.ejercicio?.id || '');
+
+    if (['sentadilla_mancuernas','prensa_piernas','sentadilla_sumo_mancuerna'].includes(id)) return 'squat';
+    if (['curl_biceps_mancuernas','curl_martillo','triceps_polea','triceps_mancuerna','press_hombros','elevacion_lateral_mancuernas','elevacion_frontal_mancuernas'].includes(id)) return 'arms';
+    if (['jalon_pecho','remo_sentado','remo_mancuerna','pullover_polea','face_pull','pallof_polea'].includes(id)) return 'row';
+    if (['press_banca_mancuernas','press_pecho_maquina','aperturas_mancuernas'].includes(id)) return 'palms';
+    if (id === 'flexiones_banco') return 'wall';
+    if (id === 'hip_thrust_banco') return 'bridge';
+    if (id === 'abduccion_maquina') return 'abduction';
+    if (id === 'patada_polea') return 'kickback';
+    if (id === 'plancha_colchoneta') return 'deadbug';
+    if (id === 'elevacion_rodillas_banco') return 'march';
+    if (['extension_cuadriceps','curl_femoral','crunch_maquina'].includes(id)) return 'standing';
+
+    if (['sentadilla_silla','sentadilla_gluteos'].includes(id)) return 'squat';
+    if (id === 'zancada_asistida') return 'lunge';
+    if (id === 'talones') return 'calf';
+    if (['marcha','rodilla_mano'].includes(id)) return 'march';
+    if (['flexion_pared_brazos','flexion_pared_pecho','extension_triceps_pared','plancha_pared_pecho'].includes(id)) return 'wall';
+    if (['circulos_brazos','apertura_brazos','elevacion_lateral_hombros','deslizamiento_pared','angel_pared','circulos_hombros'].includes(id)) return 'arms';
+    if (['empuje_palmas','presion_pecho'].includes(id)) return 'palms';
+    if (['remo_isometrico','rotacion_externa'].includes(id)) return 'row';
+    if (['bird_dog_espalda','bird_dog_core'].includes(id)) return 'birddog';
+    if (id === 'cobra_suave') return 'cobra';
+    if (id === 'puente_gluteos') return 'bridge';
+    if (id === 'abduccion_pie') return 'abduction';
+    if (id === 'patada_atras') return 'kickback';
+    if (id === 'dead_bug') return 'deadbug';
+    if (id === 'respiracion_core') return 'breathe';
+    return 'standing';
+  }
+
+  get mensajeGuia(): string {
+    const id = String(this.ejercicio?.id || '');
+    const guiaGym: Record<string,string> = {
+      sentadilla_mancuernas:'Mantén el torso estable y realiza cada repetición con control.',
+      prensa_piernas:'Empuja la plataforma con ambos pies y evita bloquear las rodillas.',
+      extension_cuadriceps:'Extiende y baja el peso lentamente, sin impulso.',
+      curl_femoral:'Flexiona las rodillas con control y regresa lentamente.',
+      curl_biceps_mancuernas:'Mantén los codos estables y evita balancear el cuerpo.',
+      curl_martillo:'Sube las mancuernas con agarre neutro y baja con control.',
+      triceps_polea:'Mantén los codos cerca del cuerpo durante todo el movimiento.',
+      triceps_mancuerna:'Extiende los brazos sin arquear la espalda.',
+      press_banca_mancuernas:'Baja las mancuernas con control y empuja manteniendo las muñecas alineadas.',
+      press_pecho_maquina:'Empuja de forma controlada y mantén la espalda apoyada.',
+      aperturas_mancuernas:'Abre los brazos hasta un rango cómodo y vuelve al centro lentamente.',
+      flexiones_banco:'Mantén el cuerpo alineado mientras bajas y subes hacia el banco.',
+      jalon_pecho:'Lleva la barra hacia el pecho sin usar impulso.',
+      remo_sentado:'Lleva el agarre hacia el abdomen manteniendo la espalda estable.',
+      remo_mancuerna:'Acerca la mancuerna al torso sin girar el cuerpo.',
+      pullover_polea:'Lleva el agarre hacia los muslos manteniendo los brazos controlados.',
+      press_hombros:'Empuja las mancuernas arriba y baja lentamente.',
+      elevacion_lateral_mancuernas:'Eleva las mancuernas hasta una altura cómoda sin balancearte.',
+      face_pull:'Lleva la cuerda hacia el rostro manteniendo el torso estable.',
+      elevacion_frontal_mancuernas:'Eleva los brazos al frente de forma controlada.',
+      hip_thrust_banco:'Eleva la cadera con control y mantén los pies firmes.',
+      sentadilla_sumo_mancuerna:'Baja con control manteniendo las rodillas alineadas.',
+      abduccion_maquina:'Abre y cierra las piernas lentamente evitando golpes del peso.',
+      patada_polea:'Lleva la pierna hacia atrás sin arquear la espalda.',
+      crunch_maquina:'Flexiona el tronco usando el abdomen y regresa lentamente.',
+      plancha_colchoneta:'Mantén el cuerpo alineado y respira de forma normal.',
+      elevacion_rodillas_banco:'Acerca las rodillas al torso sin balancearte.',
+      pallof_polea:'Extiende los brazos al frente manteniendo el torso estable.'
+    };
+    if (guiaGym[id]) return guiaGym[id];
+
+    const mensajes: Record<string,string> = {
+      squat: 'Baja con control y vuelve a subir sin rebotar.',
+      lunge: 'Mantén el equilibrio y baja solo hasta un rango cómodo.',
+      calf: 'Sube y baja los talones lentamente.',
+      march: 'Alterna ambos lados con el torso estable.',
+      wall: 'Mantén el cuerpo alineado y vuelve con control.',
+      arms: 'Mueve los brazos despacio y evita encoger los hombros.',
+      palms: 'Empuja con control y mantén la respiración natural.',
+      row: 'Lleva los codos hacia atrás con movimientos controlados.',
+      birddog: 'Extiende brazo y pierna contraria sin arquear la espalda.',
+      cobra: 'Eleva el pecho suavemente sin forzar la zona lumbar.',
+      bridge: 'Eleva la cadera y baja lentamente.',
+      abduction: 'Abre el movimiento sin inclinar el torso.',
+      kickback: 'Lleva la pierna hacia atrás sin arquear la espalda.',
+      deadbug: 'Mantén el abdomen estable durante todo el movimiento.',
+      breathe: 'Respira lento y mantén el abdomen estable.'
+    };
+    return mensajes[this.modo] || 'Sigue la demostración a un ritmo cómodo y controlado.';
+  }
+
+  get pasoCorto(): string {
+    if (this.ejercicio?.por_lado) return this.lado === 'derecho' ? 'Primero lado derecho' : 'Ahora lado izquierdo';
+    if (this.ejercicio?.modo === 'tiempo') return 'Mantén un ritmo cómodo';
+    return 'Repite el movimiento con control';
+  }
+
+  get prescripcion(): string {
+    if (!this.ejercicio) return '';
+    if (this.ejercicio.modo === 'tiempo') return `${this.ejercicio.segundos || 0} segundos`;
+    const reps = Number(this.ejercicio.repeticiones || 0);
+    return this.ejercicio.por_lado ? `${reps} por cada lado` : `${reps} repeticiones`;
+  }
+}

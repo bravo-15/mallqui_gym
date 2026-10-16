@@ -1,0 +1,272 @@
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Producto } from '../../../models/producto';
+import { Categoria } from '../../../models/categoria';
+import { ProductoService } from '../../../core/services/producto.service';
+import { CategoriaService } from '../../../core/services/categoria.service';
+import { AuthService } from '../../../auth.service';
+
+@Component({
+  selector: 'app-productos',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './productos.html',
+  styleUrl: './productos.css'
+})
+export class ProductosComponent implements OnInit {
+  productos: Producto[] = [];
+  categorias: Categoria[] = [];
+  editando = false;
+  cargando = false;
+  mensaje = '';
+  error = '';
+  busqueda = '';
+  procesandoImagen = false;
+  producto: Producto = this.productoVacio();
+
+  constructor(
+    private productoService: ProductoService,
+    private categoriaService: CategoriaService,
+    public auth: AuthService,
+    private router: Router
+  ) {}
+
+  ngOnInit(): void {
+    this.listarCategorias();
+    this.listar();
+  }
+
+  listar(): void {
+    this.cargando = true;
+    this.error = '';
+    this.productoService.listar().subscribe({
+      next: d => { this.productos = d; this.cargando = false; },
+      error: e => { this.cargando = false; this.error = this.mensajeError(e, 'No se pudieron obtener los productos.'); }
+    });
+  }
+
+  listarCategorias(): void {
+    this.categoriaService.listar().subscribe({
+      next: d => {
+        this.categorias = d.filter(c => c.estado === 'Activo');
+        if (!this.producto.id_categoria && this.categorias.length) {
+          this.producto.id_categoria = this.categorias[0].id_categoria;
+        }
+      },
+      error: e => this.error = this.mensajeError(e, 'No se pudieron cargar las categorías.')
+    });
+  }
+
+  guardar(): void {
+    this.mensaje = '';
+    this.error = '';
+    this.productoService.guardar(this.producto).subscribe({
+      next: () => { this.mensaje = 'Producto registrado correctamente.'; this.limpiarFormulario(); this.listar(); },
+      error: e => this.error = this.mensajeError(e, 'No se pudo registrar el producto.')
+    });
+  }
+
+  editar(p: Producto): void {
+    this.producto = { ...p };
+    this.editando = true;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  actualizar(): void {
+    if (!this.producto.id_producto) return;
+    const id = this.producto.id_producto;
+    const datos: Partial<Producto> = {
+      id_categoria: this.producto.id_categoria,
+      codigo_producto: this.producto.codigo_producto,
+      nombre_producto: this.producto.nombre_producto,
+      descripcion: this.producto.descripcion,
+      foto: this.producto.foto ?? null,
+      precio_compra: this.producto.precio_compra,
+      precio_venta: this.producto.precio_venta,
+      stock_minimo: this.producto.stock_minimo,
+      unidad_medida: this.producto.unidad_medida,
+      estado: this.producto.estado
+    };
+    this.productoService.actualizar(id, datos).subscribe({
+      next: () => { this.mensaje = 'Producto actualizado correctamente.'; this.limpiarFormulario(); this.listar(); },
+      error: e => this.error = this.mensajeError(e, 'No se pudo actualizar el producto.')
+    });
+  }
+
+  eliminar(id: number): void {
+    if (!confirm('¿Deseas desactivar este producto?')) return;
+    this.productoService.eliminar(id).subscribe({
+      next: r => { this.mensaje = r.mensaje; this.listar(); },
+      error: e => this.error = this.mensajeError(e, 'No se pudo desactivar el producto.')
+    });
+  }
+
+  get totalProductos(): number {
+    return this.productos.length;
+  }
+
+  get productosActivos(): number {
+    return this.productos.filter(p => String(p.estado).toLowerCase() === 'activo').length;
+  }
+
+  get productosStockBajo(): number {
+    return this.productos.filter(p => this.esStockBajo(p)).length;
+  }
+
+  get valorInventario(): number {
+    return this.productos.reduce((total, p) => total + (Number(p.stock || 0) * Number(p.precio_compra || 0)), 0);
+  }
+
+  get productosFiltrados(): Producto[] {
+    const termino = this.busqueda.trim().toLowerCase();
+    if (!termino) return this.productos;
+    return this.productos.filter(p => {
+      const categoria = String(p.categoria?.nombre_categoria ?? p.id_categoria ?? '').toLowerCase();
+      return [
+        p.nombre_producto,
+        p.codigo_producto,
+        p.descripcion,
+        categoria
+      ].some(valor => String(valor ?? '').toLowerCase().includes(termino));
+    });
+  }
+
+  esStockBajo(p: Producto): boolean {
+    const stock = Number(p.stock || 0);
+    const minimo = Number(p.stock_minimo || 0);
+    return minimo > 0 && stock <= minimo;
+  }
+
+  inicialProducto(nombre?: string): string {
+    return String(nombre || 'P').trim().charAt(0).toUpperCase() || 'P';
+  }
+
+  seleccionarImagen(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    if (!archivo) return;
+
+    this.error = '';
+    const tiposPermitidos = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!tiposPermitidos.includes(archivo.type)) {
+      this.error = 'La imagen debe ser JPG, PNG o WEBP.';
+      input.value = '';
+      return;
+    }
+    if (archivo.size > 5 * 1024 * 1024) {
+      this.error = 'La imagen no debe superar los 5 MB.';
+      input.value = '';
+      return;
+    }
+
+    this.procesandoImagen = true;
+    const lector = new FileReader();
+
+    lector.onload = () => {
+      const origen = String(lector.result || '');
+      const imagen = new Image();
+
+      imagen.onload = () => {
+        try {
+          const maximo = 900;
+          const escala = Math.min(1, maximo / Math.max(imagen.width, imagen.height));
+          const ancho = Math.max(1, Math.round(imagen.width * escala));
+          const alto = Math.max(1, Math.round(imagen.height * escala));
+          const canvas = document.createElement('canvas');
+          canvas.width = ancho;
+          canvas.height = alto;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('No se pudo preparar la imagen.');
+
+          ctx.drawImage(imagen, 0, 0, ancho, alto);
+          let foto = canvas.toDataURL('image/webp', 0.82);
+
+          // Algunos navegadores antiguos pueden no generar WEBP.
+          if (!foto.startsWith('data:image/webp')) {
+            foto = canvas.toDataURL('image/jpeg', 0.82);
+          }
+
+          if (foto.length > 2_900_000) {
+            this.error = 'La imagen sigue siendo demasiado grande. Selecciona una imagen más liviana.';
+            this.producto.foto = null;
+          } else {
+            this.producto.foto = foto;
+          }
+        } catch {
+          this.error = 'No se pudo procesar la imagen seleccionada.';
+        } finally {
+          this.procesandoImagen = false;
+          input.value = '';
+        }
+      };
+
+      imagen.onerror = () => {
+        this.procesandoImagen = false;
+        this.error = 'El archivo seleccionado no contiene una imagen válida.';
+        input.value = '';
+      };
+
+      imagen.src = origen;
+    };
+
+    lector.onerror = () => {
+      this.procesandoImagen = false;
+      this.error = 'No se pudo leer la imagen seleccionada.';
+      input.value = '';
+    };
+
+    lector.readAsDataURL(archivo);
+  }
+
+  quitarImagen(): void {
+    this.producto.foto = null;
+  }
+
+  cerrarSesion(): void {
+    this.auth.logout().subscribe({
+      next: () => { this.auth.limpiarSesion(); this.router.navigate(['/login']); },
+      error: () => { this.auth.limpiarSesion(); this.router.navigate(['/login']); }
+    });
+  }
+
+  limpiarFormulario(): void {
+    const cat = this.categorias[0]?.id_categoria ?? 0;
+    this.producto = this.productoVacio();
+    this.producto.id_categoria = cat;
+    this.editando = false;
+  }
+
+  private productoVacio(): Producto {
+    return {
+      id_categoria: 0,
+      codigo_producto: '',
+      nombre_producto: '',
+      descripcion: '',
+      foto: null,
+      precio_compra: 0,
+      precio_venta: 0,
+      stock: 0,
+      stock_minimo: 0,
+      unidad_medida: 'Unidad',
+      estado: 'Activo'
+    };
+  }
+
+  private mensajeError(e: any, fallback: string): string {
+    if (e?.status === 401) {
+      this.auth.limpiarSesion();
+      this.router.navigate(['/login']);
+      return 'La sesión venció.';
+    }
+    if (e?.status === 403) return 'Tu usuario no tiene permisos de Administrador.';
+    const errores = e?.error?.errors;
+    if (errores) {
+      const primero = Object.values(errores)[0];
+      if (Array.isArray(primero) && primero[0]) return String(primero[0]);
+    }
+    return e?.error?.mensaje ?? fallback;
+  }
+}

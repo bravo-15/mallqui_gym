@@ -1,0 +1,458 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { catchError, forkJoin, Observable, of, throwError } from 'rxjs';
+
+@Injectable({ providedIn: 'root' })
+export class GymApiService {
+  constructor(private http: HttpClient) {}
+
+  // Estado técnico visible para demostrar que Angular -> Laravel -> MySQL está operativo.
+  estadoSistema(): Observable<any> {
+    return this.http.get('/api/estado-sistema');
+  }
+
+  informacionGym(): Observable<any> { return this.http.get('/api/informacion-gym'); }
+
+  // =========================================================
+  // PORTAL DEL CLIENTE
+  // =========================================================
+  resumenCliente(): Observable<any> { return this.http.get('/api/mi-cuenta/resumen'); }
+  perfilCliente(): Observable<any> { return this.http.get('/api/mi-cuenta/perfil'); }
+  fotoPerfilCliente(): Observable<Blob> {
+    return this.http.get('/api/mi-cuenta/perfil/foto', { responseType: 'blob' });
+  }
+  actualizarFotoPerfilCliente(archivo: File): Observable<any> {
+    const form = new FormData();
+    form.append('foto', archivo);
+    return this.http.post('/api/mi-cuenta/perfil/foto', form);
+  }
+  eliminarFotoPerfilCliente(): Observable<any> {
+    return this.http.delete('/api/mi-cuenta/perfil/foto');
+  }
+  actualizarPerfilCliente(datos: any): Observable<any> { return this.http.put('/api/mi-cuenta/perfil', datos); }
+  membresiaCliente(): Observable<any> { return this.http.get('/api/mi-cuenta/membresia'); }
+  pagosCliente(): Observable<any[]> { return this.http.get<any[]>('/api/mi-cuenta/pagos'); }
+  rutinasCliente(): Observable<any[]> { return this.http.get<any[]>('/api/mi-cuenta/rutinas'); }
+  asistenciasCliente(): Observable<any[]> { return this.http.get<any[]>('/api/mi-cuenta/asistencias'); }
+  comprasCliente(): Observable<any[]> { return this.http.get<any[]>('/api/mi-cuenta/compras'); }
+  productosCliente(): Observable<any[]> { return this.http.get<any[]>('/api/mi-cuenta/productos'); }
+  reservasCliente(): Observable<any[]> { return this.http.get<any[]>('/api/mi-cuenta/reservas'); }
+
+  cargarPortalCliente(): Observable<any> {
+    const seguro = <T>(obs: Observable<T>, fallback: T): Observable<T> =>
+      obs.pipe(
+        catchError((error: any) => {
+          if (error?.status === 401 || error?.status === 403) {
+            return throwError(() => error);
+          }
+          return of(fallback);
+        })
+      );
+
+    return forkJoin({
+      resumen: seguro(this.resumenCliente(), null),
+      perfil: seguro(this.perfilCliente(), {}),
+      membresia: seguro(this.membresiaCliente(), { actual: null, historial: [] }),
+      pagos: seguro(this.pagosCliente(), []),
+      rutinas: seguro(this.rutinasCliente(), []),
+      asistencias: seguro(this.asistenciasCliente(), []),
+      compras: seguro(this.comprasCliente(), []),
+      productos: seguro(this.productosCliente(), []),
+      reservas: seguro(this.reservasCliente(), []),
+      clases: seguro(this.clases(), []),
+      membresiasDisponibles: seguro(this.membresias(), []),
+      gymInfo: seguro(this.informacionGym(), {}),
+    });
+  }
+
+  reservarClase(id_clase: number, fecha_clase: string): Observable<any> {
+    return this.http.post('/api/mi-cuenta/reservas', { id_clase, fecha_clase });
+  }
+
+  cancelarReserva(id_reserva: number): Observable<any> {
+    return this.http.post(`/api/mi-cuenta/reservas/${id_reserva}/cancelar`, {});
+  }
+
+  comprarMembresiaCliente(datos: {
+    id_membresia: number;
+    fecha_inicio?: string;
+    metodo_pago: string;
+    numero_operacion: string;
+    observacion?: string;
+  }): Observable<any> {
+    return this.http.post('/api/mi-cuenta/pagos/comprar', datos);
+  }
+
+  // Alias heredado para no romper otros componentes mientras se migra el nombre.
+  solicitarPago(datos: {
+    id_membresia: number;
+    fecha_inicio?: string;
+    metodo_pago: string;
+    numero_operacion: string;
+    observacion?: string;
+  }): Observable<any> {
+    return this.comprarMembresiaCliente(datos);
+  }
+
+  cancelarSolicitudPago(id_pago: number): Observable<any> {
+    return this.http.post(`/api/mi-cuenta/pagos/${id_pago}/cancelar`, {});
+  }
+
+  comprobantePagoCliente(id_pago: number): Observable<any> {
+    return this.http.get(`/api/mi-cuenta/pagos/${id_pago}/comprobante`);
+  }
+
+  entrenamientoCasaCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/entrenamiento-gym');
+  }
+
+  guardarPlanCasaCliente(datos: { dias: string[]; zonas: string[]; objetivo: string }): Observable<any> {
+    return this.http.put('/api/mi-cuenta/entrenamiento-gym/plan', datos);
+  }
+
+  iniciarSesionCasaCliente(id_rutina: number): Observable<any> {
+    return this.http.post('/api/mi-cuenta/entrenamiento-gym/sesiones/iniciar', { id_rutina });
+  }
+
+  actualizarSesionCasaCliente(id_sesion: number, datos: {
+    duracion_segundos?: number;
+    estado?: 'EnCurso' | 'Pausada';
+    id_detalle_rutina?: number;
+    series_realizadas?: number;
+    repeticiones_realizadas?: number;
+    peso_utilizado?: number | null;
+    completado?: boolean;
+  }): Observable<any> {
+    return this.http.patch(`/api/mi-cuenta/entrenamiento-gym/sesiones/${id_sesion}`, datos);
+  }
+
+  cancelarSesionCasaCliente(id_sesion: number, duracion_segundos: number): Observable<any> {
+    return this.http.post(`/api/mi-cuenta/entrenamiento-gym/sesiones/${id_sesion}/cancelar`, { duracion_segundos });
+  }
+
+  registrarSesionCasaCliente(datos: {
+    id_sesion_casa?: number | null;
+    id_rutina: number;
+    duracion_segundos: number;
+    ejercicios: Array<{
+      id_detalle_rutina: number;
+      series_realizadas: number;
+      repeticiones_realizadas: number;
+      peso_utilizado: number | null;
+      completado: boolean;
+    }>;
+  }): Observable<any> {
+    return this.http.post('/api/mi-cuenta/entrenamiento-gym/sesiones', datos);
+  }
+
+  progresoCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/progreso');
+  }
+
+  metaCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/meta');
+  }
+
+  guardarMetaCliente(datos: { sesiones_semanales: number; recordatorios: boolean }): Observable<any> {
+    return this.http.put('/api/mi-cuenta/meta', datos);
+  }
+
+  calendarioCliente(): Observable<any[]> {
+    return this.http.get<any[]>('/api/mi-cuenta/calendario');
+  }
+
+  notificacionesCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/notificaciones');
+  }
+
+  leerNotificacionCliente(id: number): Observable<any> {
+    return this.http.post(`/api/mi-cuenta/notificaciones/${id}/leer`, {});
+  }
+
+  leerTodasNotificacionesCliente(): Observable<any> {
+    return this.http.post('/api/mi-cuenta/notificaciones/leer-todas', {});
+  }
+
+  entrenadorCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/entrenador');
+  }
+
+  historialCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/historial');
+  }
+
+  credencialCliente(): Observable<any> {
+    return this.http.get('/api/mi-cuenta/credencial');
+  }
+
+  clasesFavoritasCliente(): Observable<any[]> {
+    return this.http.get<any[]>('/api/mi-cuenta/favoritos/clases');
+  }
+
+  agregarClaseFavorita(id_clase: number): Observable<any> {
+    return this.http.post('/api/mi-cuenta/favoritos/clases', { id_clase });
+  }
+
+  quitarClaseFavorita(id_clase: number): Observable<any> {
+    return this.http.delete(`/api/mi-cuenta/favoritos/clases/${id_clase}`);
+  }
+
+  opinionesCliente(): Observable<any[]> {
+    return this.http.get<any[]>('/api/mi-cuenta/opiniones');
+  }
+
+  guardarOpinionCliente(datos: { categoria: string; calificacion: number; comentario: string }): Observable<any> {
+    return this.http.post('/api/mi-cuenta/opiniones', datos);
+  }
+
+  soporteCliente(): Observable<any[]> {
+    return this.http.get<any[]>('/api/mi-cuenta/soporte');
+  }
+
+  crearSoporteCliente(datos: { asunto: string; mensaje: string }): Observable<any> {
+    return this.http.post('/api/mi-cuenta/soporte', datos);
+  }
+
+  // =========================================================
+  // PORTAL DEL ENTRENADOR
+  // =========================================================
+  resumenEntrenador(): Observable<any> { return this.http.get('/api/mi-entrenador/resumen'); }
+  clientesEntrenador(): Observable<any[]> { return this.http.get<any[]>('/api/mi-entrenador/clientes'); }
+  rutinasEntrenador(): Observable<any[]> { return this.http.get<any[]>('/api/mi-entrenador/rutinas'); }
+  clasesEntrenador(): Observable<any[]> { return this.http.get<any[]>('/api/mi-entrenador/clases'); }
+  reservasEntrenador(): Observable<any[]> { return this.http.get<any[]>('/api/mi-entrenador/reservas'); }
+
+  cargarPortalEntrenador(): Observable<any> {
+    return forkJoin({
+      resumen: this.resumenEntrenador(),
+      clientes: this.clientesEntrenador(),
+      rutinas: this.rutinasEntrenador(),
+      clases: this.clasesEntrenador(),
+      reservas: this.reservasEntrenador(),
+    });
+  }
+
+  // =========================================================
+  // INFORMACION GENERAL AUTENTICADA
+  // =========================================================
+  membresias(): Observable<any[]> { return this.http.get<any[]>('/api/membresias'); }
+  membresia(id: number): Observable<any> { return this.http.get(`/api/membresias/${id}`); }
+  clases(): Observable<any[]> { return this.http.get<any[]>('/api/clases'); }
+  clase(id: number): Observable<any> { return this.http.get(`/api/clases/${id}`); }
+
+  // =========================================================
+  // DASHBOARD Y CLIENTES
+  // =========================================================
+  dashboard(): Observable<any> { return this.http.get('/api/dashboard/resumen'); }
+  clientes(): Observable<any[]> { return this.http.get<any[]>('/api/clientes'); }
+  cliente(id: number): Observable<any> { return this.http.get(`/api/clientes/${id}`); }
+  crearCliente(datos: any): Observable<any> { return this.http.post('/api/clientes', datos); }
+  actualizarCliente(id: number, datos: any): Observable<any> { return this.http.put(`/api/clientes/${id}`, datos); }
+  desactivarCliente(id: number): Observable<any> { return this.http.delete(`/api/clientes/${id}`); }
+
+  // =========================================================
+  // MEMBRESIAS Y PAGOS
+  // =========================================================
+  crearMembresia(datos: any): Observable<any> { return this.http.post('/api/membresias', datos); }
+  actualizarMembresia(id: number, datos: any): Observable<any> { return this.http.put(`/api/membresias/${id}`, datos); }
+  eliminarMembresia(id: number): Observable<any> { return this.http.delete(`/api/membresias/${id}`); }
+
+  membresiasClienteAdmin(): Observable<any[]> { return this.http.get<any[]>('/api/cliente-membresias'); }
+  membresiaClienteAdmin(id: number): Observable<any> { return this.http.get(`/api/cliente-membresias/${id}`); }
+  pagosAdmin(): Observable<any[]> { return this.http.get<any[]>('/api/pagos-membresia'); }
+  pagoAdmin(id: number): Observable<any> { return this.http.get(`/api/pagos-membresia/${id}`); }
+  contratarMembresia(datos: any): Observable<any> { return this.http.post('/api/membresias/contratar', datos); }
+  renovarMembresia(datos: any): Observable<any> { return this.http.post('/api/membresias/renovar', datos); }
+  estadoMembresiaCliente(idCliente: number): Observable<any> {
+    return this.http.get(`/api/clientes/${idCliente}/estado-membresia`);
+  }
+  historialPagosCliente(idCliente: number): Observable<any[]> {
+    return this.http.get<any[]>(`/api/clientes/${idCliente}/historial-pagos`);
+  }
+  comprobantePago(idPago: number): Observable<any> {
+    return this.http.get(`/api/pagos-membresia/${idPago}/comprobante`);
+  }
+
+  // =========================================================
+  // ENTRENADORES
+  // =========================================================
+  entrenadores(): Observable<any[]> { return this.http.get<any[]>('/api/entrenadores'); }
+  entrenador(id: number): Observable<any> { return this.http.get(`/api/entrenadores/${id}`); }
+  crearEntrenador(datos: any): Observable<any> { return this.http.post('/api/entrenadores', datos); }
+  actualizarEntrenador(id: number, datos: any): Observable<any> { return this.http.put(`/api/entrenadores/${id}`, datos); }
+  eliminarEntrenador(id: number): Observable<any> { return this.http.delete(`/api/entrenadores/${id}`); }
+
+  // =========================================================
+  // CLASES
+  // =========================================================
+  crearClase(datos: any): Observable<any> { return this.http.post('/api/clases', datos); }
+  actualizarClase(id: number, datos: any): Observable<any> { return this.http.put(`/api/clases/${id}`, datos); }
+  eliminarClase(id: number): Observable<any> { return this.http.delete(`/api/clases/${id}`); }
+
+  // =========================================================
+  // RUTINAS Y DETALLE DE RUTINAS
+  // =========================================================
+  rutinas(): Observable<any[]> { return this.http.get<any[]>('/api/rutinas'); }
+  rutina(id: number): Observable<any> { return this.http.get(`/api/rutinas/${id}`); }
+  crearRutina(datos: any): Observable<any> { return this.http.post('/api/rutinas', datos); }
+  actualizarRutina(id: number, datos: any): Observable<any> { return this.http.put(`/api/rutinas/${id}`, datos); }
+  eliminarRutina(id: number): Observable<any> { return this.http.delete(`/api/rutinas/${id}`); }
+
+  detalleRutinas(): Observable<any[]> { return this.http.get<any[]>('/api/detalle-rutinas'); }
+  detalleRutina(id: number): Observable<any> { return this.http.get(`/api/detalle-rutinas/${id}`); }
+  crearDetalleRutina(datos: any): Observable<any> { return this.http.post('/api/detalle-rutinas', datos); }
+  actualizarDetalleRutina(id: number, datos: any): Observable<any> {
+    return this.http.put(`/api/detalle-rutinas/${id}`, datos);
+  }
+  eliminarDetalleRutina(id: number): Observable<any> { return this.http.delete(`/api/detalle-rutinas/${id}`); }
+
+  // =========================================================
+  // ASISTENCIAS
+  // =========================================================
+  asistencias(): Observable<any[]> { return this.http.get<any[]>('/api/asistencias'); }
+  asistencia(id: number): Observable<any> { return this.http.get(`/api/asistencias/${id}`); }
+  registrarEntrada(id_cliente: number, observacion?: string): Observable<any> {
+    return this.http.post('/api/asistencias/entrada', { id_cliente, observacion });
+  }
+  registrarSalida(id_cliente: number, observacion?: string): Observable<any> {
+    return this.http.post('/api/asistencias/salida', { id_cliente, observacion });
+  }
+  historialAsistencias(idCliente: number): Observable<any[]> {
+    return this.http.get<any[]>(`/api/clientes/${idCliente}/asistencias`);
+  }
+
+  // =========================================================
+  // RESERVAS
+  // =========================================================
+  reservasAdmin(): Observable<any[]> { return this.http.get<any[]>('/api/reservas'); }
+  cambiarEstadoReserva(id: number, estado: string): Observable<any> {
+    return this.http.put(`/api/reservas/${id}/estado`, { estado });
+  }
+
+  // =========================================================
+  // CATEGORIAS Y PRODUCTOS
+  // =========================================================
+  categorias(): Observable<any[]> { return this.http.get<any[]>('/api/categorias'); }
+  categoria(id: number): Observable<any> { return this.http.get(`/api/categorias/${id}`); }
+  crearCategoria(datos: any): Observable<any> { return this.http.post('/api/categorias', datos); }
+  actualizarCategoria(id: number, datos: any): Observable<any> { return this.http.put(`/api/categorias/${id}`, datos); }
+  eliminarCategoria(id: number): Observable<any> { return this.http.delete(`/api/categorias/${id}`); }
+
+  productos(): Observable<any[]> { return this.http.get<any[]>('/api/productos'); }
+  producto(id: number): Observable<any> { return this.http.get(`/api/productos/${id}`); }
+  crearProducto(datos: any): Observable<any> { return this.http.post('/api/productos', datos); }
+  actualizarProducto(id: number, datos: any): Observable<any> { return this.http.put(`/api/productos/${id}`, datos); }
+  eliminarProducto(id: number): Observable<any> { return this.http.delete(`/api/productos/${id}`); }
+
+  // =========================================================
+  // PROVEEDORES, COMPRAS Y VENTAS
+  // =========================================================
+  proveedores(): Observable<any[]> { return this.http.get<any[]>('/api/proveedores'); }
+  proveedor(id: number): Observable<any> { return this.http.get(`/api/proveedores/${id}`); }
+  crearProveedor(datos: any): Observable<any> { return this.http.post('/api/proveedores', datos); }
+  actualizarProveedor(id: number, datos: any): Observable<any> { return this.http.put(`/api/proveedores/${id}`, datos); }
+  eliminarProveedor(id: number): Observable<any> { return this.http.delete(`/api/proveedores/${id}`); }
+
+  compras(): Observable<any[]> { return this.http.get<any[]>('/api/compras'); }
+  compra(id: number): Observable<any> { return this.http.get(`/api/compras/${id}`); }
+  registrarCompra(datos: any): Observable<any> { return this.http.post('/api/compras', datos); }
+  anularCompra(id: number): Observable<any> { return this.http.post(`/api/compras/${id}/anular`, {}); }
+
+  ventas(): Observable<any[]> { return this.http.get<any[]>('/api/ventas'); }
+  venta(id: number): Observable<any> { return this.http.get(`/api/ventas/${id}`); }
+  registrarVenta(datos: any): Observable<any> { return this.http.post('/api/ventas', datos); }
+
+  // =========================================================
+  // CAJA
+  // =========================================================
+  cajaActual(): Observable<any> { return this.http.get('/api/caja/actual'); }
+  abrirCaja(monto_inicial: number, observacion?: string): Observable<any> {
+    return this.http.post('/api/caja/abrir', { monto_inicial, observacion });
+  }
+  movimientoCaja(tipo: 'Ingreso' | 'Egreso', origen: string, descripcion: string, monto: number): Observable<any> {
+    return this.http.post('/api/caja/movimientos', { tipo, origen, descripcion, monto });
+  }
+  cerrarCaja(monto_real: number, observacion?: string): Observable<any> {
+    return this.http.post('/api/caja/cerrar', { monto_real, observacion });
+  }
+  historialCaja(): Observable<any[]> { return this.http.get<any[]>('/api/caja/historial'); }
+
+  // =========================================================
+  // KARDEX
+  // =========================================================
+  kardex(filtros?: { id_producto?: number; desde?: string; hasta?: string }): Observable<any[]> {
+    let params = new HttpParams();
+    if (filtros?.id_producto) params = params.set('id_producto', String(filtros.id_producto));
+    if (filtros?.desde) params = params.set('desde', filtros.desde);
+    if (filtros?.hasta) params = params.set('hasta', filtros.hasta);
+    return this.http.get<any[]>('/api/kardex', { params });
+  }
+
+  ajustarStock(datos: { id_producto: number; tipo: 'Entrada' | 'Salida'; cantidad: number; motivo: string }): Observable<any> {
+    return this.http.post('/api/kardex/ajustar', datos);
+  }
+
+  // =========================================================
+  // USUARIOS
+  // =========================================================
+  usuarios(): Observable<any[]> { return this.http.get<any[]>('/api/usuarios'); }
+  usuario(id: number): Observable<any> { return this.http.get(`/api/usuarios/${id}`); }
+  crearUsuario(datos: any): Observable<any> { return this.http.post('/api/usuarios', datos); }
+  actualizarUsuario(id: number, datos: any): Observable<any> { return this.http.put(`/api/usuarios/${id}`, datos); }
+  eliminarUsuario(id: number): Observable<any> { return this.http.delete(`/api/usuarios/${id}`); }
+
+  // =========================================================
+  // AUDITORIA
+  // =========================================================
+  auditorias(filtros?: { id_usuario?: number; ruta?: string; desde?: string; hasta?: string }): Observable<any[]> {
+    let params = new HttpParams();
+    if (filtros?.id_usuario) params = params.set('id_usuario', String(filtros.id_usuario));
+    if (filtros?.ruta) params = params.set('ruta', filtros.ruta);
+    if (filtros?.desde) params = params.set('desde', filtros.desde);
+    if (filtros?.hasta) params = params.set('hasta', filtros.hasta);
+    return this.http.get<any[]>('/api/auditorias', { params });
+  }
+
+  // =========================================================
+  // REPORTES Y VISTAS
+  // =========================================================
+  reporteIngresos(desde?: string, hasta?: string): Observable<any> {
+    return this.http.get('/api/reportes/ingresos', { params: this.rangoFechas(desde, hasta) });
+  }
+  reporteVencimientos(): Observable<any> { return this.http.get('/api/reportes/vencimientos'); }
+  reporteAsistencias(desde?: string, hasta?: string): Observable<any> {
+    return this.http.get('/api/reportes/asistencias', { params: this.rangoFechas(desde, hasta) });
+  }
+  vistaClientesMembresias(): Observable<any[]> { return this.http.get<any[]>('/api/vistas/clientes-membresias'); }
+  vistaStock(): Observable<any[]> { return this.http.get<any[]>('/api/vistas/stock'); }
+  vistaVentas(): Observable<any[]> { return this.http.get<any[]>('/api/vistas/ventas'); }
+
+  // =========================================================
+  // CARGA GENERAL DEL PANEL ADMIN
+  // =========================================================
+  cargarPanelAdmin(): Observable<any> {
+    return forkJoin({
+      dashboard: this.dashboard(),
+      clientes: this.clientes(),
+      membresias: this.membresiasClienteAdmin(),
+      pagos: this.pagosAdmin(),
+      clases: this.clases(),
+      entrenadores: this.entrenadores(),
+      asistencias: this.asistencias(),
+      reservas: this.reservasAdmin(),
+      productos: this.productos(),
+      proveedores: this.proveedores(),
+      compras: this.compras(),
+      ventas: this.ventas(),
+      usuarios: this.usuarios(),
+      caja: this.cajaActual(),
+    });
+  }
+
+  private rangoFechas(desde?: string, hasta?: string): HttpParams {
+    let params = new HttpParams();
+    if (desde) params = params.set('desde', desde);
+    if (hasta) params = params.set('hasta', hasta);
+    return params;
+  }
+}
